@@ -1,0 +1,80 @@
+#!/bin/bash
+
+### Copy Meta-Template Usage:help
+#
+###/doc
+
+#%include notest.sh autohelp.sh bashout.sh
+
+METASOURCE=meta-templates
+
+meta:get_template() {
+	local action="$1"; shift
+	local meta="$1"; shift
+
+	if [[ "$action" = add ]]; then
+		echo "$meta.cfg"
+	else
+		faile "Wrong action"
+	fi
+}
+
+meta:linematch() {
+	local metafile="$1"; shift
+	local n="$1"; shift
+	local pat="$1"; shift
+
+	[[ "$(sed "$n p" -n "$metafile")" =~ $pat ]]
+}
+
+meta:file_needskey() {
+	local metafile="$1"; shift
+	local keyname="$1"; shift
+
+	grep "{{$keyname}}" -n "$metafile"|cut -d: -f1|head -n 1
+}
+
+meta:substitute_var() {
+	local metafile="$1"; shift
+	local keyname="$1"; shift
+	local value="$1"; shift
+
+	while [[ -n "$(meta:file_needskey "$metafile" "$keyname")" ]]; do
+		local line_n="$(meta:file_needskey "$metafile" "$keyname")"
+
+		# Action whatever the value
+		debuge ". Subtituting $line_n : {{$keyname}} -> $value"
+		sed -r -e "$line_n s/\{\{$keyname\}\}/$value/g" -i "$metafile"
+
+		# Optional line and empty value
+		meta:linematch "$metafile" "$line_n" '^#\?' && {
+			if [[ -z "$value" ]]; then
+				debuge ".. Deleting $line_n"
+				sed "$line_n d" -i "$metafile"
+			else
+				breake ".. Keeping optional line"
+				sed -r -e "$line_n s/^#\?//" -i "$metafile"
+			fi
+		}
+	done
+}
+
+meta:process() {
+	local metafile="$1"; shift
+
+	# TESTING STUFF
+	meta:substitute_var "$metafile" NAME newname
+	meta:substitute_var "$metafile" CONTACTS someone
+	meta:substitute_var "$metafile" TEMPLATE
+}
+
+main() {
+	local meta="$(meta:get_template "$@")"
+	[[ -f "$METASOURCE/$meta" ]] || faile "File not found"
+
+	cp "$METASOURCE/$meta" scratch/
+
+	meta:process "scratch/$meta" "$@"
+}
+
+notest main "$@"
