@@ -1,58 +1,29 @@
-# Nagios Tooling
+# Nagios Tooling (NGT)
 
 Some tooling to make working with Nagios a little easier.
 
 ## Concepts
 
-This is basic tooling for basic nagios usage. It makes use specifically of 5 of the objects in Nagios:
+This is basic tooling for basic nagios usage. It makes use specifically of 6 of the objects in Nagios:
 
 * Contacts
 * Contact Groups
 * Hosts
 * Hostgroups
 * Services
+* Service groups
 
 To this end
 
 * Contacts reference Contact Groups
 * Hosts reference Contact Groups
-* Hosts and Services both reference Host Groups
+* Hosts, Service groups, and Services all reference Hostgroups
 
-Notably in this tooling, "Host Groups" are termed as "Service Hosts" to better reflect the association pattern.
-
-## Workflow
-
-1. Define Contact Group
-2. Define Contact
-3. Define Service Host
-4. Define Service
-5. Define Host
-
-Example commands
-
-	ngt set contactgroup -n NAME [-d DESCRIPTION] [-u NOTESURL]
-
-	ngt set contact -n NAME [-c CONTACTGROUP] [-m EMAIL] [-t TEMPLATE|-T] [-d DESCRIPTION] [-u NOTESURL]
-
-	ngt set servicehost -n NAME [-d DESCRIPTION] [-u NOTESURL]
-
-	ngt set service -n NAME [-s SERVICEHOST] [-c COMMAND] [-t TEMPLATE|-T] [-d DESCRIPTION] [-u NOTESURL]
-
-	ngt set host -n NAME [-c CONTACTGROUP] [-s SERVICEHOST] [-h HOSTNAME] [-t TEMPLATE|-T] [-d DESCRIPTION] [-u NOTESURL]
-
-Each command prints the resulting file that is added or modified. The name is always required ; if object to be created does not exist yet, then only template, description and note URL are optional.
-
-The `-t TEMPLATE`  option allows to base off of a template. The `-T` option defines the object as a template. `-t` and `-T` are mutually exclusive.
-
-(Note to self: this should be implemented using the same comments system as described below)
-
-(Note to self: the templates should be stored in a `/var/ngtools/ngtemplates/` folder)
-
-(Note to self: generalize this ...?)
+Notably in NGT, "Hostgroups" are termed as "AppHosts" to better reflect the association pattern -- the grouping definition is, specifically, service-driven.
 
 ## Default templates
 
-This tooling provides some generic objects out of the box:
+NGT provides some generic objects out of the box:
 
 * `ngt-contact`
 * `ngt-nsc-host`
@@ -69,14 +40,81 @@ Some will require parameters to configure them, you will be prompted interactive
 
 	ngt genhelp ngt-nsc-command
 
-(Note to self: this should be implemented as a top of file comment, like
+## Meta-Templates
 
-	## -p PASSWORD : the password to use when connecting
-	## -n NAME : the name of the comand
+A Meta-Template is used to build objects, an even opbject templates themselves.
+
+Meta-Template format looks like this:
+
+	##! -n NAME : the name of the comand
+	##? -p PASSWORD : the password to use when connecting
 
 	define command {
-		command_name    %NAME%
-		command_line    /usr/lib/nagios/plugins/check_nt -H '$HOSTADDRESS$' %PASSWORD% -p 12489 -v '$ARG1$' $ARG2$
+		command_name    {{NAME}}
+		command_line    /usr/lib/nagios/plugins/check_nt -H '$HOSTADDRESS$' {{PASSWORD}} -p 12489 -v '$ARG1$' $ARG2$
 	}
 
-)
+Running the help prints the relevant arguments lines ; these are also used to parse the arguments and apply them in-template.
+
+A `##!` marks a mandatory parameter ; a `##?` marks an optional parameter that will be substituted as blank if not provided.
+
+## Workflow
+
+1. Define Contact Group
+2. Define Contact
+3. Define Service Host
+4. Define Service
+5. Define Host
+
+Example commands
+
+	ngt set contactgroup -n NAME [-d DESCRIPTION] [-u NOTESURL]
+
+	ngt set contact -n NAME -c CONTACTGROUP -m EMAIL {-t TEMPLATE|-T} [-d DESCRIPTION] [-u NOTESURL]
+
+	ngt set servicehost -n NAME -d DESCRIPTION [-u NOTESURL]
+
+	ngt set servicegroup -n NAME -a APPHOSTS -c COMMAND {-t TEMPLATE|-T} [-d DESCRIPTION] [-u NOTESURL]
+
+	ngt set service -n NAME {-a APPHOSTS|-s SERVICEGROUP} -c COMMAND {-t TEMPLATE|-T} [-d DESCRIPTION] [-u NOTESURL]
+
+	ngt set host -n NAME -c CONTACTGROUP -a APPHOSTS -h HOSTNAME {-t TEMPLATE|-T} [-d DESCRIPTION] [-u NOTESURL]
+
+Each command prints the resulting file that is added. If the object already eixsts, it is overwritten.
+
+The `-t TEMPLATE`  option allows to base off of a template. The `-T` option defines the object as a template. `-t` and `-T` are mutually exclusive, one of them must be provided.
+
+All of these are based themselves on Meta-Templates stored in `/var/ngtools/ngtemplates/`
+
+Other commands (where `OBJTYPE` is one of `contact`, `contactgroup`, `service`, `servicegroup`, `servicehost`, `host`)
+
+	ngt rename OBJTYPE OBJNAME1 OBJNAME2
+
+	ngt del OBJTYTPE OBJNAME
+
+	ngt purge { OBJTYPE | all }
+
+The `rename` operation renames an object from name 1 to name 2
+
+The `del` operation removes the object
+
+The `purge` operation removes all NGT objects of that type, or all NGT objects where `all` is specified.
+
+## Nagios `/etc` structure
+
+	/etc/nagios3/ngt-objects
+		|
+		+-- templates/
+		|
+		+-- contacts/
+		|
+		+-- services/
+		|
+		+-- hosts/
+
+* Templates reside in `templates/`
+* Contacts and Contact Groups reside in `contacts/`
+* Services, Service gruops, and Service Hosts reside in `services/`
+* Hosts reside in `hosts/`
+
+
