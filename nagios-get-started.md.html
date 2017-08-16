@@ -1,0 +1,215 @@
+<style>
+h1, h2, h3, body {
+	font-family: sans-serif;
+}
+
+pre {
+	background-color: #eee;
+	color: #009;
+	padding: 1.5em;
+}
+</style>
+<h1>Nagios notes</h1>
+<h2>Install Nagios server on Ubuntu</h2>
+<p>Using 16.04</p>
+<pre><code>apt-get install nagios3 mailutils nagios-nrpe-plugin -y
+</code></pre>
+<p>Configurations are in <code>/etc/nagios3</code> and <code>/etc/nagios-plugins</code></p>
+<p>Default Nagios user is <code>nagiosadmin</code> and the password is the one set up during installation.</p>
+<p>Standard nagios executables are in <code>/usr/lib/nagios/plugins</code></p>
+<h3>Configs</h3>
+<p>Main configuration is <code>/etc/nagios3/nagios.cfg</code></p>
+<p>There are entries to load either <code>cfg_file</code> or <code>cfg_dir</code> ; a suggested setup would be to add the following:</p>
+<pre><code>cfg_dir=/etc/nagios3/objects/company/templates
+cfg_dir=/etc/nagios3/objects/company/services
+cfg_dir=/etc/nagios3/objects/company/hosts
+cfg_dir=/etc/nagios3/objects/company/contacts
+</code></pre>
+<p>And create the appropriate directories</p>
+<pre><code>mkdir -p /etc/nagios3/objects/company/{services,templates,hosts,contacts}
+</code></pre>
+<p>"templates" contains any generic definitions for hosts, for example a generic Windows host would have disk checks and suchlike defined to use <code>check_nt</code></p>
+<p>"services" contains any defintions for how to check for, say, disk usage or is-apache-running</p>
+<p>"hosts" contains the definitions of individual hosts</p>
+<p>"contacts" decribes the various contacts and groups that should be available</p>
+<p>To be processed, config files must end with <code>.cfg</code></p>
+<h3>Commands - Windows</h3>
+<p>Specifically when dealing with Windows instances, you may find you need to edit the config definition for the <code>check_nt</code> command in <code>/etc/nagios-plugins/config/nt.cfg</code></p>
+<p>You want the command to be defined thus:</p>
+<pre><code>define command {
+    command_name    check_nt
+    command_line    /usr/lib/nagios/plugins/check_nt -H '$HOSTADDRESS$' -s /company123nagios -p 12489 -v '$ARG1$' $ARG2$
+      ; NOTE: ARG2 -- MUST NOT --  be enclosed in quotes otherwise some checks check fail with "wrong -argument" type errors
+}
+</code></pre>
+<p>Aside from the note on ARG2, note also that there is a <code>-s /company123nagios</code> argument ; this is why further down you are given a password for all agents to use.</p>
+<h3>Splitting</h3>
+<p>For scalable management purposes, it would be commendable to restrict 1 definition to 1 file.</p>
+<p>You can use this bash function to split a pre-existing file</p>
+<pre><code>splitem() { local name="$1" ; local i=0; while read; do [[ "$REPLY" = '' ]] &amp;&amp; continue ; [[ "$REPLY" =~ define ]] &amp;&amp; { i=$((i+1)) ; } ; echo "$REPLY" &gt;&gt; "${name}${i}.cfg" ; done ; }
+</code></pre>
+<p>You can then split the file using this command</p>
+<pre><code>splitem pfx &lt; your-file.cfg
+</code></pre>
+<p>This creates <code>pfx1.cfg</code>, <code>pfx2.cfg</code> ... for as many definitions you have in your file. Check the contents of the split results, and remove the original when done.</p>
+<h2>Configure target hosts</h2>
+<p>Stricly speaking, you only need to configure the hosts if you want to monitor some "internal" property. Checking whether SSH or HTTP/HTTPS are running can be done using external checks.</p>
+<p>Checking disk space, load and memory consumption however require the use of agents.</p>
+<h3>Windows targets</h3>
+<p>Download and install NSClient++ : <a href="http://www.nsclient.org/download/">http://www.nsclient.org/download/</a></p>
+<ul>
+<li>Choose generic, as opposed op5 or any specific system</li>
+<li>In "Allowed hosts", add the IP of the Nagios host</li>
+<li>set the Password to <code>/company123nagios</code></li>
+<li>Enable the <code>check_nt</code> module</li>
+</ul>
+<p>If you need to re-configure later, see <code>C:\Program Files\NSClient++\nsclient.ini</code> ; you can add a custom <code>port=12489</code> to explicitly set the port, or to any other number you need</p>
+<p>Once installed</p>
+<ul>
+<li>run <code>services.msc</code>, locate the NSClient service and start it if needed</li>
+<li>If necessary, open Windows Firewall and add a firewall rule that allows connections from { your nagios host, or anywhere } to <code>C:\Program Files\NSClient++\nscp.exe</code></li>
+</ul>
+<h4>Testing connection</h4>
+<p>You can test whether you set up the Nagios client properly by issuing some check commmands from the command line on the Nagios server</p>
+<pre><code>/usr/lib/nagios/plugins/check_nt -H 172.20.7.73 -p 12489 -s /company123nagios -v USEDDISKSPACE -l C w 80 c 90
+/usr/lib/nagios/plugins/check_nt -H 172.20.7.73 -p 12489 -s /company123nagios -v CPULOAD -l 5,80,90
+</code></pre>
+<h3>Ubuntu targets</h3>
+<p>Ubuntu:</p>
+<pre><code>apt update &amp;&amp; apt install -y nagios-nrpe-server
+</code></pre>
+<p>Then edit <code>/etc/nagios/nrpe.cfg</code> and set <code>allowed_hosts</code> to include the IP of the nagios server</p>
+<p>Simple as that. If you have a firewall running, add port 5666 --  for example for uncomplicated firewall:</p>
+<pre><code>ufw allow 5666
+</code></pre>
+<p>You can test a connection is up by issuing a command that is registered on the target (see below)</p>
+<pre><code> /usr/lib/nagios/plugins/check_nrpe -H 10.0.3.241 -c check_load
+</code></pre>
+<h4>NRPE commands</h4>
+<p>The NRPE config defines the available remote commands, search for the <code>command[...]</code> definitions.</p>
+<p>If you want to allow another command, you need to add it here.</p>
+<p>Notably, you will likely want to adjust the default <code>check_hda1</code> to be something like</p>
+<pre><code>command[check_disk1]=/usr/lib/nagios/plugins/check_disk -w 20% -c 10% -p /dev/sda2
+command[check_disk2]=/usr/lib/nagios/plugins/check_disk -w 20% -c 10% -p /dev/sda3
+</code></pre>
+<h2>Define objects</h2>
+<p>A fuller document is available on Nagios's help site: <a href="https://assets.nagios.com/downloads/nagioscore/docs/nagioscore/3/en/objectdefinitions.html">https://assets.nagios.com/downloads/nagioscore/docs/nagioscore/3/en/objectdefinitions.html</a></p>
+<h3>Template for Host and Hostgroup</h3>
+<p>A host group defines an grouping of hosts; a host can be in multiple groups</p>
+<pre><code>define hostgroup {
+    hostgroup_name  windows-servers
+    alias Windows   Servers
+    register        1                  ; necessary
+}
+</code></pre>
+<p>Template for a host</p>
+<pre><code>define host {
+    name windows-server         ; The name of this host template
+    use generic-host            ; Inherit default values from the generic-host template
+    check_period 24x7           ; By default, Windows servers are monitored round the clock
+    check_interval 5            ; Actively check the server every 5 minutes
+    retry_interval 1            ; Schedule host check retries at 1 minute intervals
+    max_check_attempts 10       ; Check each server 10 times (max)
+    check_command check-host-alive ; Default command to check if servers are "alive"
+    notification_period 24x7    ; Send notification out at any time - day or night
+    notification_interval 30    ; Resend notifications every 30 minutes
+    notification_options d,r    ; Only send notifications for specific host states
+    contact_groups admins       ; Notifications get sent to the admins by default
+    hostgroups windows-servers  ; Host groups that Windows servers should be a member of
+    register 0                  ; DONT REGISTER THIS - ITS JUST A TEMPLATE
+}
+</code></pre>
+<h3>Hosts</h3>
+<p>Note the use of a contact group to determine who to notify, for the host.</p>
+<p>Note the use of a notes-url to provide a link to additional information</p>
+<pre><code>define host {
+    use         ubuntu-servers
+    host_name   jenkins
+    alias       company Jenkins
+    address     jenkins.company.eye
+    contact_groups  automation-engineers
+    notes_url   http://twiki.company.eye/bin/view/Software/JenkinsLog
+}
+</code></pre>
+<h3>Services</h3>
+<p>At minimum, a service should carry a base service definition (<code>use</code>), a description (<code>service_description</code>), a command that performs a check (<code>check_command</code>) and the host groups it applies to (<code>hostgroup_name</code>), and the contacts to alert shuld things go wrong. The list of hosts or hostgroups must be comma-separated, with no spaces.</p>
+<pre><code>define service {
+    use                 generic-service
+    hostgroup_name      windows-servers
+    contacts        senior-engineers
+    service_description C: Drive Space
+    check_command       check_nt!USEDDISKSPACE!-l c -w 80 -c 90
+    notes_url       http://twiki.company.eye/bin/view/DiskProvisioning
+}
+</code></pre>
+<h3>Contacts and Contact groups</h3>
+<p>A contact defines a person to receive notifications ; they can belong to any number of groups.</p>
+<p>At minimum we should specify an email address and a group to assign the contact to.</p>
+<pre><code>define contact {
+    contact_name    tkedzierski
+    alias       Tai Kedzierski
+    email       tkedzierski@company.com
+    contactgroups   npd-senior-engineers
+}
+</code></pre>
+<p>Group definition</p>
+<pre><code>define contactgroup {
+    contactgroup_name   npd-senior-engineers
+    alias           NPD Senior Engineers
+}
+</code></pre>
+<h2>Associating objects</h2>
+<ul>
+<li>Contacts reference contact groups</li>
+<li>Services reference host groups</li>
+<li>Hosts reference host groups and contact groups</li>
+</ul>
+<h4>Custom commands</h4>
+<p>Nagios uses 4 return codes:</p>
+<ul>
+<li><code>0</code> - everything OK</li>
+<li><code>1</code> - warning</li>
+<li><code>2</code> - critical</li>
+<li><code>3</code> - unknown</li>
+</ul>
+<p>Your command need only return the code; any textual output is superfluous.</p>
+<p>For example, this script can be used as a simple command to tell whether the version of Ubuntu needs upgrading:</p>
+<pre><code>u_release_file=/etc/lsb-release
+
+# Non-ubuntu - unknowable
+[[ -f "$u_release_file" ]] || exit 4
+
+. "$u_release_file"
+
+major=${DISTRIB_RELEASE%.*}
+minor=${DISTRIB_RELEASE#*.}
+year2=$(date +%y)
+
+if [[ $(( major / 2 * 2 )) != $major ]]; then
+    # non-LTS. Never desirable, even if recent
+    exit 2
+fi
+
+if [[ "$minor" = 04 ]]; then
+    if [[ $(( year2 - major )) -le 2 ]]; then
+        exit 0 # recent LTS
+    elif [[ $(( year2 - major )) -le 4 ]]; then
+        exit 1 # ageing LTS
+    fi
+fi
+
+# non-LTS, or LTS is too old
+exit 2
+</code></pre>
+<p>Save it in <code>/usr/local/bin/check_ubuntu</code> and add the following to your config:</p>
+<pre><code>command[check_ubuntu]=/usr/local/bin/check_ubuntu
+</code></pre>
+<p>You can add a service to your Nagios master</p>
+<pre><code>define service {
+    service_description Server uses recent Ubuntu LTS
+    hostgroup_name      ubuntu-servers
+    check_command       check_nrpe!check_ubuntu
+    contact_groups      npd-senior-engineers
+}
+</code></pre>
+<p>which causes the check to run on your targets. You need the check to be available on all your targets for this to work.</p>

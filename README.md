@@ -2,91 +2,46 @@
 
 Some tooling to make working with Nagios a little easier.
 
-## Concepts
-
-This is basic tooling for basic nagios usage. It makes use specifically of 6 of the objects in Nagios:
-
-* Contacts
-* Contact Groups
-* Hosts
-* Hostgroups
-* Services
-* Service groups
-
-To this end
-
-* Contacts reference Contact Groups
-* Hosts reference Contact Groups
-* Hosts, Service groups, and Services all reference Hostgroups
-
-Notably in NGT, "Hostgroups" are termed as "AppHosts" to better reflect the association pattern -- the grouping definition is, specifically, service-driven.
-
-## Default templates
-
-NGT provides some generic objects out of the box:
-
-* `ngt-contact`
-* `ngt-nsc-host`
-* `ngt-nrpe-host`
-* `ngt-nsc-command`
-
-Whilst you may not need these, they provide a solution to problems encountered in some situations. They are not active by default ; to activate one, for example:
-
-	ngt genadd ngt-nsc-command
-
-which adds a fixed `check_nt` command as `ngt_check_nt`, if the default command is broken.
-
-Some will require parameters to configure them, you will be prompted interactively, or can supply them on the command line. To find out required configuration options, use
-
-	ngt genhelp ngt-nsc-command
-
 ## Meta-Templates
 
-A Meta-Template is used to build objects, an even opbject templates themselves.
+A Meta-Template is used to build Nagios objects, an even Nagios object templates themselves.
 
 Meta-Template format looks like this:
 
 	##! -n NAME : the name of the comand
-	##? -p PASSWORD : the password to use when connecting
+	##? -P PASSWORD : the password to use when connecting
+	##? -p PORT=12489 :  the port to connect to (default 12489)
 
 	define command {
 		command_name    {{NAME}}
-		command_line    /usr/lib/nagios/plugins/check_nt -H '$HOSTADDRESS$' {{PASSWORD}} -p 12489 -v '$ARG1$' $ARG2$
+		command_line    /usr/lib/nagios/plugins/check_nt -H '$HOSTADDRESS$' {{PASSWORD}} {{PORT}} -v '$ARG1$' $ARG2$
 	}
 
 Running the help prints the relevant arguments lines ; these are also used to parse the arguments and apply them in-template.
 
 A `##!` marks a mandatory parameter ; a `##?` marks an optional parameter that will be substituted as blank if not provided.
 
-## Workflow
+## Commands
 
-1. Define Contact Group
-2. Define Contact
-3. Define Service Host
-4. Define Service
-5. Define Host
+Examples
 
-Example commands
+	ngt add contactgroup -n NAME [-d DESCRIPTION] [-u NOTESURL]
 
-	ngt set contactgroup -n NAME [-d DESCRIPTION] [-u NOTESURL]
+	ngt add contact -n NAME -cg CONTACTGROUP -m EMAIL [-d DESCRIPTION] [-u NOTESURL]
 
-	ngt set contact -n NAME -c CONTACTGROUP -m EMAIL {-t TEMPLATE|-T} [-d DESCRIPTION] [-u NOTESURL]
+	ngt add servicehost -n NAME -d DESCRIPTION [-u NOTESURL]
 
-	ngt set servicehost -n NAME -d DESCRIPTION [-u NOTESURL]
+	ngt add app -n NAME -s SERVICEHOSTS -c COMMAND -cg CONTACTGROUP [-d DESCRIPTION] [-u NOTESURL]
 
-	ngt set servicegroup -n NAME -a APPHOSTS -c COMMAND {-t TEMPLATE|-T} [-d DESCRIPTION] [-u NOTESURL]
+	ngt add service -n NAME {-s SERVICEHOSTS|-a APP} -c COMMAND -cg CONTACTGROUP [-d DESCRIPTION] [-u NOTESURL]
 
-	ngt set service -n NAME {-a APPHOSTS|-s SERVICEGROUP} -c COMMAND {-t TEMPLATE|-T} [-d DESCRIPTION] [-u NOTESURL]
+	ngt add host -n NAME -c CONTACTGROUP -s SERVICEHOST -h HOSTNAME [-d DESCRIPTION] [-u NOTESURL]
 
-	ngt set host -n NAME -c CONTACTGROUP -a APPHOSTS -h HOSTNAME {-t TEMPLATE|-T} [-d DESCRIPTION] [-u NOTESURL]
-
-Each command prints the resulting file that is added. If the object already eixsts, it is overwritten.
-
-The `-t TEMPLATE`  option allows to base off of a template. The `-T` option defines the object as a template. `-t` and `-T` are mutually exclusive, one of them must be provided.
+Each command prints the resulting file that is added. If the object already exists, it is overwritten.
 
 All of these are based themselves on Meta-Templates stored in `/var/ngtools/ngtemplates/`
 
-Other commands (where `OBJTYPE` is one of `contact`, `contactgroup`, `service`, `servicegroup`, `servicehost`, `host`)
+Other commands (where `OBJTYPE` is one of `contact`, `contactgroup`, `service`, `app`, `servicehost`, `host`)
 
 	ngt rename OBJTYPE OBJNAME1 OBJNAME2
 
@@ -104,6 +59,8 @@ The `purge` operation removes all NGT objects of that type, or all NGT objects w
 
 	/etc/nagios3/ngt-objects
 		|
+		+-- commands/
+		|
 		+-- templates/
 		|
 		+-- contacts/
@@ -112,9 +69,47 @@ The `purge` operation removes all NGT objects of that type, or all NGT objects w
 		|
 		+-- hosts/
 
+* Command definitions reside in `commands/`
 * Templates reside in `templates/`
 * Contacts and Contact Groups reside in `contacts/`
 * Services, Service gruops, and Service Hosts reside in `services/`
 * Hosts reside in `hosts/`
 
+## FAQ
+
+### How do I associate a host with a service?
+
+Nagios does not allow Hosts to specify directly what services they want. Instead, we tie them together around a Service Host
+
+1. Associate the Service with a Service Host
+	* Or, associate the Service with an App
+	* Associate the App with a Service Host
+2. Associate the Host with the Service Host
+
+### How do I manage my nagios inventory with my orchestration inventory?
+
+You should choose one inventory to form the basis of the other. In NGT's preference, I suggest that you use your orchestration tool to generate NGT lines as a bash script.
+
+Such a bash script might look like this:
+
+	ngt purge hosts
+	ngt set host -n wiki -s http-servers -h wiki.example.com -d "Information docs"
+	ngt set host -n jenkins -s tomcat-servers,build-nodes -h build.example.com -d "Build automation server" -u http://wiki.example.com/wiki/BuildServer
+	ngt set host -n buildnode1 -s build-nodes -h b1.example.com
+	ngt set host -n buildnode2 -s build-nodes -h b2.example.com
+
+This would be backed by a separate Nagios configuration script such as
+
+	ngt purge servicehosts
+	ngt purge apps
+
+	ngt set servicehost -n http-servers
+	ngt set servicehost -n build-nodes
+	ngt set servicehost -n tomcat-servers
+
+	ngt set app -n webbuild -s build-nodes
+
+	ngt set service -n tomcat -cg webadmins
+	ngt set service -n http -s http-servers -a webbuild -cg webadmins
+	ngt set service -n jnlp-agent -a webbuild -cg webadmins
 
