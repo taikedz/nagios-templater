@@ -9,8 +9,11 @@ A Meta-Template is used to build Nagios objects, an even Nagios object templates
 Meta-Template format looks like this:
 
 	##! -n NAME : the name of the comand
-	##? -P PASSWORD : the password to use when connecting
-	##? -p PORT=12489 :  the port to connect to (default 12489)
+	##? -pass PASSWORD : the password to use when connecting
+	##? -p PORT=12489 : the port to connect to (default 12489)
+
+	##> PASSWORD=-s {{PASSWORD}}
+	##> PORT=-p {{PORT}}
 
 	define command {
 		command_name    {{NAME}}
@@ -20,6 +23,10 @@ Meta-Template format looks like this:
 Running the help prints the relevant arguments lines ; these are also used to parse the arguments and apply them in-template.
 
 A `##!` marks a mandatory parameter ; a `##?` marks an optional parameter that will be substituted as blank if not provided.
+
+A `##>` marks a substitution that is performed if the parameter is not empty, to provide extra parameter configuration.
+
+In the above example, name is substituted in the text as itself ; PASSOWRD, if not supplied, is substituted for blank, but if supplied gets substituted first to attach a `-s` prefix, and then in the data as `-s (the password)`
 
 ## Commands
 
