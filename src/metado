@@ -6,20 +6,21 @@
 
 #%include notest.sh autohelp.sh bashout.sh
 
-METASOURCE=meta-templates
 
 meta:get_template() {
 	local action="$1"; shift
 	local meta="$1"; shift
 
-	if [[ "$action" = add ]]; then
-		echo "$meta.cfg"
-	else
-		faile "Wrong action"
-	fi
+	[[ -n "$meta" ]] || return 1
+
+	echo "$meta"
 }
 
-meta:linematch() {
+meta:get_action() {
+	META_action="$1"
+}
+
+meta:line_matches() {
 	local metafile="$1"; shift
 	local n="$1"; shift
 	local pat="$1"; shift
@@ -39,6 +40,8 @@ meta:substitute_var() {
 	local keyname="$1"; shift
 	local value="$1"; shift
 
+	debuge "Subtituting in [$metafile] : $keyname --> '$value'"
+
 	while [[ -n "$(meta:file_needskey "$metafile" "$keyname")" ]]; do
 		local line_n="$(meta:file_needskey "$metafile" "$keyname")"
 
@@ -47,30 +50,120 @@ meta:substitute_var() {
 		sed -r -e "$line_n s/\{\{$keyname\}\}/$value/g" -i "$metafile"
 
 		# Optional line and empty value
-		meta:linematch "$metafile" "$line_n" '^#\?' && {
+		meta:line_matches "$metafile" "$line_n" '^#\?' && {
 			if [[ -z "$value" ]]; then
 				debuge ".. Deleting $line_n"
 				sed "$line_n d" -i "$metafile"
 			else
-				breake ".. Keeping optional line"
+				breake "\\.. Keeping optional line"
 				sed -r -e "$line_n s/^#\?//" -i "$metafile"
 			fi
 		}
 	done
 }
 
+meta:arg:is_required() {
+	local argdef="${1%% *}"; shift
+
+	[[ "$argdef" = "##!" ]]
+}
+
+meta:splice:get_first() {
+	local sep="$1"; shift
+	local token="${1%%$sep*}"
+
+	echo "~$token"|sed -r 's/^~//' # If the token starts with "-", it needs escaping
+
+	debuge "Splicing out [$1] on separator [$sep] as [$token]"
+}
+
+meta:splice:del_first() {
+	local sep="$1"; shift
+
+	if [[ ! "$1" =~ $sep ]]; then
+		debuge "Could not find [$sep] in [$1]"
+		echo ""
+	else
+		echo "${1#*$sep}"
+	fi
+}
+
+meta:user_value() {
+	local pkey="$1"; shift
+	local defval="${1:-}"; shift
+
+	debuge "Seeking $pkey with default value [$deval]"
+
+	local take=false
+	for token in "${USER_args[@]}"; do
+		debuge "Token: $token , Take: $take"
+		[[ "$token" = "$pkey" ]] && {
+			take=true
+			continue
+		}
+
+		[[ "$take" = "true" ]] && {
+			echo "$token"
+			return
+		}
+	done
+
+	echo "$defval"
+	return
+}
+
 meta:process() {
 	local metafile="$1"; shift
 
-	# TESTING STUFF
-	meta:substitute_var "$metafile" NAME newname
-	meta:substitute_var "$metafile" CONTACTS someone
-	meta:substitute_var "$metafile" TEMPLATE
+	meta:get_action "$@"
+
+	if [[ "$META_action" = args ]]; then
+		meta:get_header_args "$metafile"
+		return 0
+	fi
+
+	local argslist="$(meta:get_header_args "$metafile")"
+	
+	debuge "${CPUR}$argslist"
+
+	while read argdef; do
+		debuge "${CYEL}Processing $argdef"
+
+		local req="$(meta:splice:get_first " " "$argdef")"
+		local argdef="$(meta:splice:del_first " " "$argdef")"
+
+		local paramkey="$(meta:splice:get_first " " "$argdef")"
+		local argdef="$(meta:splice:del_first " " "$argdef")"
+
+		local varname="$(meta:splice:get_first "=" "$argdef")"
+		local defvalue="$(meta:splice:del_first "=" "$argdef")"
+
+		local value="$(meta:user_value "$paramkey" "$defvalue")"
+
+		debuge "Key: [$paramkey] / Var: [$varname] / Def: [$defvalue] / Val: [$value]"
+
+		if meta:arg:is_required "$req"; then
+			[[ -n "$value" ]] || faile "Argument required: $paramkey $varname"
+		fi
+
+		meta:substitute_var "$metafile" "$varname" "$value"
+
+	done < <(echo -e "$argslist\na new line")
+}
+
+meta:get_header_args() {
+	# Extract args headers to populate
+	local metafile="$1"; shift
+	
+	grep -Po '^##(!|\?)\s(\S+)\s([^:]+)' "$metafile"
 }
 
 main() {
-	local meta="$(meta:get_template "$@")"
-	[[ -f "$METASOURCE/$meta" ]] || faile "File not found"
+	METASOURCE=meta-templates
+	USER_args=($@)
+
+	local meta="$(meta:get_template "$@").cfg"
+	[[ -f "$METASOURCE/$meta" ]] || faile "File not found $METASOURCE/$meta"
 
 	cp "$METASOURCE/$meta" scratch/
 
