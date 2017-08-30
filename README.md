@@ -2,26 +2,9 @@
 
 Some tooling to make working with Nagios a little easier.
 
-## Meta-Templates
+## Jinja2 Templates
 
-A Meta-Template is used to build Nagios objects, an even Nagios object templates themselves.
-
-Meta-Template format looks like this:
-
-	##! -n NAME : the name of the comand
-	##? -pass PASSWORD : the password to use when connecting
-	##? -p PORT=12489 : the port to connect to (default 12489)
-
-	define command {
-		command_name    {{NAME}}
-		command_line    /usr/lib/nagios/plugins/check_nt -H '$HOSTADDRESS$' {{-s PASSWORD}} {{-p PORT}} -v '$ARG1$' $ARG2$
-	}
-
-Running the help prints the relevant arguments lines ; these are also used to parse the arguments and apply them in-template.
-
-A `##!` marks a mandatory parameter ; a `##?` marks an optional parameter that will be substituted as blank if not provided.
-
-A `##>` marks a substitution that is performed if the parameter is not empty, to provide extra parameter configuration.
+HGT uses Jinja2 templates to build Nagios objects, as well as Nagios object templates themselves.
 
 ## Commands
 
@@ -41,7 +24,7 @@ Examples
 
 Each command prints the resulting file that is added. If the object already exists, it is overwritten.
 
-All of these are based themselves on Meta-Templates stored in `/var/ngtools/ngtemplates/`
+All of these are based themselves on Jinja2 templates stored in `/var/ngtools/ngtemplates/`
 
 Other commands (where `OBJTYPE` is one of `contact`, `contactgroup`, `service`, `app`, `servicehost`, `host`)
 
