@@ -36,8 +36,8 @@ def process(filename, cargs):
 
 
 def main(args):
-    action = args[0]
-    filename = args[1]
+    action = argv[1]
+    filename = argv[2]
 
     if action == "args":
         dump_paramters(filename)
@@ -48,5 +48,5 @@ def main(args):
     return 0
 
 if __name__ == "__main__":
-    from sys import args
+    from sys import argv
     exit( main(args) )
