@@ -1,0 +1,24 @@
+#!/bin/bash
+
+set -euo pipefail
+
+#%include bashout.sh colours.sh
+
+. /etc/ngt/paths || faile "Could not open config /etc/ngt/paths"
+
+add_object() {
+	local objectname="$1"; shift
+
+	autojinja "$NGT_resources/$objectname.cfg" "$@"
+	#TODO write the result to the correct object location
+}
+
+main() {
+	local comamnd="${1:-}"; shift
+	local object="${1:-}"; shift
+
+	[[ -n "$command" ]] || faile "Please specify a command"
+	[[ -n "$object" ]] || faile "Please spcify an object type"
+
+	add_object "$object" "$@"
+}

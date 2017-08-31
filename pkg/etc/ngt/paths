@@ -1,0 +1,4 @@
+NGT_resources=/usr/share/ngt/resources
+NGT_lib=/usr/share/ngt/lib
+
+NGT_objects=/etc/nagios3/objects/ngt
