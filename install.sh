@@ -54,7 +54,14 @@ install_nagios() {
 }
 
 main() {
+	[[ "$UID" = 0 ]] || {
+		echo "You must be root to run this script"
+		exit 1
+	}
+
 	cd "$(dirname "$0")"
+
+	autojinja/install.sh
 
 	# Base nagios install
 
