@@ -61,6 +61,18 @@ main() {
 
 	cd "$(dirname "$0")"
 
+	[[ -f "autojinja/install.sh" ]] || {
+		[[ "$*" =~ '-f' ]] && {
+			git clone https://github.com/taikedz/autojinja || {
+				echo "Could not update autojinja - did you corrupt it?"
+				exit 1
+			}
+		} || {
+			echo "You need to clone this repository with '--recursive' option"
+			exit 1
+		}
+	}
+
 	autojinja/install.sh
 
 	# Base nagios install
