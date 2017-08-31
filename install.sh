@@ -53,6 +53,23 @@ install_nagios() {
 	fix_files
 }
 
+ensure_submodule() {
+	local indicator="$1"; shift
+	local url="$1"; shift
+
+	[[ -f "$indicator" ]] || {
+		[[ "$*" =~ '-f' ]] && {
+			git clone "$url" || {
+				echo "Could not add $(basename "$url") - did you corrupt it?"
+				exit 1
+			}
+		} || {
+			echo "You need to clone this repository with '--recursive' option"
+			exit 1
+		}
+	}
+}
+
 main() {
 	[[ "$UID" = 0 ]] || {
 		echo "You must be root to run this script"
@@ -61,19 +78,11 @@ main() {
 
 	cd "$(dirname "$0")"
 
-	[[ -f "autojinja/install.sh" ]] || {
-		[[ "$*" =~ '-f' ]] && {
-			git clone https://github.com/taikedz/autojinja || {
-				echo "Could not update autojinja - did you corrupt it?"
-				exit 1
-			}
-		} || {
-			echo "You need to clone this repository with '--recursive' option"
-			exit 1
-		}
-	}
+	ensure_submodule "autojinja/install.sh" "https://github.com/taikedz/autojinja"
+	#ensure_submodule "bash-builder/install" "https://github.com/taikedz/bash-builder"
 
 	autojinja/install.sh
+	#(cd bash-builder; ./install)
 
 	# Base nagios install
 
@@ -81,10 +90,7 @@ main() {
 
 	# Out tools
 
-	NGT_resources=/usr/share/ngt/resources
-	NGT_lib=/usr/share/ngt/lib
-
-	NGT_objects=/etc/nagios3/objects/ngt
+	. pkg/etc/ngt/paths
 
 	add_templates
 	add_progs ngt
